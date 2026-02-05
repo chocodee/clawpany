@@ -1,6 +1,17 @@
-use axum::{routing::{get, post}, Json, Router};
+use axum::{
+    extract::State,
+    http::HeaderMap,
+    routing::{get, post},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    fs,
+    net::SocketAddr,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +30,7 @@ struct Task {
     assignee: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct AppState {
     bots: HashMap<String, Bot>,
     tasks: HashMap<String, Task>,
@@ -71,7 +82,7 @@ struct DeliverResponse {
 
 #[tokio::main]
 async fn main() {
-    let state = Arc::new(Mutex::new(AppState::default()));
+    let state = Arc::new(Mutex::new(load_state("state.json")));
 
     let app = Router::new()
         .route("/health", get(health))
@@ -79,7 +90,7 @@ async fn main() {
         .route("/tasks/create", post(create_task))
         .route("/tasks/assign", post(assign_task))
         .route("/deliver", post(deliver))
-        .with_state(state);
+        .with_state(state.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("orchestrator listening on {}", addr);
@@ -92,24 +103,57 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"ok": true}))
 }
 
+fn require_auth(headers: &HeaderMap) {
+    let expected = std::env::var("ORCH_API_KEY").unwrap_or_else(|_| "dev_key".to_string());
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let token = auth.strip_prefix("Bearer ").unwrap_or("");
+    if token != expected {
+        panic!("unauthorized");
+    }
+}
+
+fn load_state<P: AsRef<Path>>(path: P) -> AppState {
+    if let Ok(data) = fs::read_to_string(&path) {
+        if let Ok(state) = serde_json::from_str(&data) {
+            return state;
+        }
+    }
+    AppState::default()
+}
+
+fn save_state<P: AsRef<Path>>(path: P, state: &AppState) {
+    if let Ok(data) = serde_json::to_string_pretty(state) {
+        let _ = fs::write(path, data);
+    }
+}
+
 async fn register_bot(
-    state: axum::extract::State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
     Json(req): Json<RegisterBotRequest>,
 ) -> Json<RegisterBotResponse> {
+    require_auth(&headers);
     let id = Uuid::new_v4().to_string();
     let bot = Bot {
         id: id.clone(),
         name: req.name,
         capabilities: req.capabilities,
     };
-    state.lock().unwrap().bots.insert(id.clone(), bot);
+    let mut guard = state.lock().unwrap();
+    guard.bots.insert(id.clone(), bot);
+    save_state("state.json", &guard);
     Json(RegisterBotResponse { id })
 }
 
 async fn create_task(
-    state: axum::extract::State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
     Json(req): Json<CreateTaskRequest>,
 ) -> Json<CreateTaskResponse> {
+    require_auth(&headers);
     let id = Uuid::new_v4().to_string();
     let task = Task {
         id: id.clone(),
@@ -118,30 +162,38 @@ async fn create_task(
         status: "open".to_string(),
         assignee: None,
     };
-    state.lock().unwrap().tasks.insert(id.clone(), task);
+    let mut guard = state.lock().unwrap();
+    guard.tasks.insert(id.clone(), task);
+    save_state("state.json", &guard);
     Json(CreateTaskResponse { id })
 }
 
 async fn assign_task(
-    state: axum::extract::State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
     Json(req): Json<AssignTaskRequest>,
 ) -> Json<AssignTaskResponse> {
-    let mut state = state.lock().unwrap();
-    if let Some(task) = state.tasks.get_mut(&req.task_id) {
+    require_auth(&headers);
+    let mut guard = state.lock().unwrap();
+    if let Some(task) = guard.tasks.get_mut(&req.task_id) {
         task.assignee = Some(req.bot_id);
         task.status = "assigned".to_string();
+        save_state("state.json", &guard);
         return Json(AssignTaskResponse { ok: true });
     }
     Json(AssignTaskResponse { ok: false })
 }
 
 async fn deliver(
-    state: axum::extract::State<Arc<Mutex<AppState>>>,
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
     Json(req): Json<DeliverRequest>,
 ) -> Json<DeliverResponse> {
-    let mut state = state.lock().unwrap();
-    if let Some(task) = state.tasks.get_mut(&req.task_id) {
+    require_auth(&headers);
+    let mut guard = state.lock().unwrap();
+    if let Some(task) = guard.tasks.get_mut(&req.task_id) {
         task.status = format!("delivered: {}", req.summary);
+        save_state("state.json", &guard);
         return Json(DeliverResponse { ok: true });
     }
     Json(DeliverResponse { ok: false })
