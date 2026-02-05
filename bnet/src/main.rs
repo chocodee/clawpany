@@ -180,6 +180,21 @@ enum Commands {
         #[arg(long, default_value = "CEO")]
         name: String,
     },
+    TokenomicsSet {
+        #[arg(long)]
+        total_supply_cap: f64,
+        #[arg(long)]
+        minted_supply: f64,
+        #[arg(long)]
+        allocations: String,
+    },
+    TokenomicsReport,
+    GrantTokens {
+        #[arg(long)]
+        holder_id: String,
+        #[arg(long)]
+        amount: f64,
+    },
 }
 
 fn parse_timestamp(opt: Option<String>) -> DateTime<Utc> {
@@ -217,6 +232,17 @@ fn parse_deliverables(raw: &str) -> Vec<Deliverable> {
         .collect()
 }
 
+fn parse_allocations_config(raw: &str) -> Vec<TokenAllocation> {
+    raw.split('|')
+        .filter_map(|chunk| {
+            let mut parts = chunk.split(':');
+            let name = parts.next()?.trim().to_string();
+            let percent = parts.next()?.parse::<f64>().ok()?;
+            Some(TokenAllocation { name, percent })
+        })
+        .collect()
+}
+
 fn default_state() -> CompanyState {
     let now = Utc::now();
     CompanyState {
@@ -239,6 +265,7 @@ fn default_state() -> CompanyState {
         votes: HashMap::new(),
         marketplace: vec![],
         tasks: HashMap::new(),
+        tokenomics: None,
     }
 }
 
@@ -512,6 +539,31 @@ fn main() {
             seed_roles(&mut state, &holder_id, &name).expect("seed roles");
             save_state(&path, &state).expect("save state");
             println!("Seeded roles with {} as CEO + Board seat", holder_id);
+        }
+        Commands::TokenomicsSet {
+            total_supply_cap,
+            minted_supply,
+            allocations,
+        } => {
+            let mut state = load_state(&path).expect("load state");
+            let allocs = parse_allocations_config(&allocations);
+            set_tokenomics(&mut state, total_supply_cap, minted_supply, allocs);
+            save_state(&path, &state).expect("save state");
+            println!("Tokenomics saved");
+        }
+        Commands::TokenomicsReport => {
+            let state = load_state(&path).expect("load state");
+            if let Some(report) = tokenomics_report(&state) {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                println!("No tokenomics configured");
+            }
+        }
+        Commands::GrantTokens { holder_id, amount } => {
+            let mut state = load_state(&path).expect("load state");
+            grant_tokens(&mut state, &holder_id, amount).expect("grant tokens");
+            save_state(&path, &state).expect("save state");
+            println!("Granted {} tokens to {}", amount, holder_id);
         }
     }
 }
