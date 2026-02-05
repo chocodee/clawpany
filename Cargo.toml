@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "bnet",
+  "apps/orchestrator"
+]
+resolver = "2"
