@@ -417,3 +417,57 @@ pub fn pm_finalize_task(state: &mut CompanyState, id: &str, loc_changed: usize, 
     task.updated_at = Utc::now();
     Ok(())
 }
+
+pub fn ensure_holder(state: &mut CompanyState, id: &str, name: &str) {
+    state.holders.entry(id.to_string()).or_insert(Holder {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        tokens: 0.0,
+        cash: 0.0,
+        positions: vec![],
+    });
+}
+
+pub fn assign_role_to_holder(state: &mut CompanyState, role: RoleTier, holder_id: &str) -> Result<(), String> {
+    let holder = state.holders.get_mut(holder_id).ok_or("Holder not found")?;
+    if !holder.positions.contains(&role) {
+        holder.positions.push(role);
+    }
+
+    if role == RoleTier::Employee {
+        return Ok(());
+    }
+
+    if let Some(pos) = state.positions.iter_mut().find(|p| p.tier == role && p.holder_id.is_none()) {
+        pos.holder_id = Some(holder_id.to_string());
+        pos.acquired_at = Some(Utc::now());
+        pos.price_paid = Some(0.0);
+        Ok(())
+    } else {
+        Err("No available position for role".into())
+    }
+}
+
+pub fn seed_roles(state: &mut CompanyState, ceo_id: &str, ceo_name: &str) -> Result<(), String> {
+    ensure_holder(state, ceo_id, ceo_name);
+    ensure_positions(state);
+
+    assign_role_to_holder(state, RoleTier::CEO, ceo_id)?;
+    assign_role_to_holder(state, RoleTier::BoardSeat, ceo_id)?;
+
+    let defaults = vec![
+        ("president", "President", RoleTier::President),
+        ("co_president", "Co-President", RoleTier::CoPresident),
+        ("csuite", "C-Suite", RoleTier::CSuite),
+        ("director", "Director", RoleTier::Director),
+        ("senior_manager", "Senior Manager", RoleTier::SeniorManager),
+        ("manager", "Manager", RoleTier::Manager),
+        ("employee", "Employee", RoleTier::Employee),
+    ];
+
+    for (id, name, role) in defaults {
+        ensure_holder(state, id, name);
+        let _ = assign_role_to_holder(state, role, id);
+    }
+    Ok(())
+}

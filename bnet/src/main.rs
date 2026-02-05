@@ -174,6 +174,12 @@ enum Commands {
         tests_run: bool,
     },
     ListTasks,
+    SeedRoles {
+        #[arg(long, default_value = "ceo")]
+        holder_id: String,
+        #[arg(long, default_value = "CEO")]
+        name: String,
+    },
 }
 
 fn parse_timestamp(opt: Option<String>) -> DateTime<Utc> {
@@ -500,6 +506,12 @@ fn main() {
                 println!("{} | {} | status: {:?} | deliverables: {}",
                     t.id, t.title, t.status, t.deliverables.len());
             }
+        }
+        Commands::SeedRoles { holder_id, name } => {
+            let mut state = load_state(&path).expect("load state");
+            seed_roles(&mut state, &holder_id, &name).expect("seed roles");
+            save_state(&path, &state).expect("save state");
+            println!("Seeded roles with {} as CEO + Board seat", holder_id);
         }
     }
 }
