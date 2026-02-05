@@ -442,10 +442,22 @@ pub fn assign_role_to_holder(state: &mut CompanyState, role: RoleTier, holder_id
         pos.holder_id = Some(holder_id.to_string());
         pos.acquired_at = Some(Utc::now());
         pos.price_paid = Some(0.0);
-        Ok(())
-    } else {
-        Err("No available position for role".into())
+        return Ok(());
     }
+
+    // For fixed/special roles, create a position if missing
+    let special = matches!(role, RoleTier::CEO | RoleTier::President | RoleTier::CoPresident | RoleTier::BoardSeat);
+    if special {
+        state.positions.push(RolePosition {
+            tier: role,
+            holder_id: Some(holder_id.to_string()),
+            acquired_at: Some(Utc::now()),
+            price_paid: Some(0.0),
+        });
+        return Ok(());
+    }
+
+    Err("No available position for role".into())
 }
 
 pub fn seed_roles(state: &mut CompanyState, ceo_id: &str, ceo_name: &str) -> Result<(), String> {
