@@ -147,14 +147,34 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"ok": true}))
 }
 
-fn require_auth(headers: &HeaderMap) {
+fn require_auth(headers: &HeaderMap, scope: &str) {
     let expected = std::env::var("ORCH_API_KEY").unwrap_or_else(|_| "dev_key".to_string());
     let auth = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let token = auth.strip_prefix("Bearer ").unwrap_or("");
-    if token != expected {
+    let mut ok = token == expected;
+
+    if !ok {
+        let scoped = std::env::var("ORCH_API_KEYS").unwrap_or_default();
+        for entry in scoped
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
+            let mut parts = entry.split(':');
+            let key = parts.next().unwrap_or("");
+            let scopes = parts.next().unwrap_or("");
+            if key == token {
+                let allowed = scopes.split('|').any(|s| s == scope || s == "*");
+                ok = allowed;
+                break;
+            }
+        }
+    }
+
+    if !ok {
         panic!("unauthorized");
     }
 }
@@ -179,7 +199,7 @@ async fn register_bot(
     headers: HeaderMap,
     Json(req): Json<RegisterBotRequest>,
 ) -> Json<RegisterBotResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "bots:write");
     let id = Uuid::new_v4().to_string();
     let bot = Bot {
         id: id.clone(),
@@ -197,7 +217,7 @@ async fn create_client(
     headers: HeaderMap,
     Json(req): Json<CreateClientRequest>,
 ) -> Json<CreateClientResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "clients:write");
     let id = Uuid::new_v4().to_string();
     let client = Client {
         id: id.clone(),
@@ -215,7 +235,7 @@ async fn create_project(
     headers: HeaderMap,
     Json(req): Json<CreateProjectRequest>,
 ) -> Json<CreateProjectResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "projects:write");
     let id = Uuid::new_v4().to_string();
     let project = Project {
         id: id.clone(),
@@ -234,7 +254,7 @@ async fn intake_task(
     headers: HeaderMap,
     Json(req): Json<IntakeTaskRequest>,
 ) -> Json<IntakeTaskResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "tasks:write");
     let id = Uuid::new_v4().to_string();
     let task = Task {
         id: id.clone(),
@@ -255,7 +275,7 @@ async fn assign_task(
     headers: HeaderMap,
     Json(req): Json<AssignTaskRequest>,
 ) -> Json<AssignTaskResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "tasks:write");
     let mut guard = state.lock().unwrap();
     if let Some(task) = guard.tasks.get_mut(&req.task_id) {
         task.assignee = Some(req.bot_id);
@@ -271,7 +291,7 @@ async fn deliver(
     headers: HeaderMap,
     Json(req): Json<DeliverRequest>,
 ) -> Json<DeliverResponse> {
-    require_auth(&headers);
+    require_auth(&headers, "tasks:write");
     let mut guard = state.lock().unwrap();
     if let Some(task) = guard.tasks.get_mut(&req.task_id) {
         task.status = format!("delivered: {}", req.summary);
