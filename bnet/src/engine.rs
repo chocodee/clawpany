@@ -67,8 +67,7 @@ pub fn record_token_price(state: &mut CompanyState, price: f64, now: DateTime<Ut
     state.token_price_history.push((now, price));
     // keep only 30 days of history
     let cutoff = now - Duration::days(state.governance_policy.value_window_days);
-    state.token_price_history
-        .retain(|(ts, _)| *ts >= cutoff);
+    state.token_price_history.retain(|(ts, _)| *ts >= cutoff);
 }
 
 pub fn rolling_average_price(state: &CompanyState) -> Option<f64> {
@@ -172,7 +171,12 @@ pub fn remove_holder_from_role(state: &mut CompanyState, role: RoleTier, holder_
     }
 }
 
-pub fn onboard_holder(state: &mut CompanyState, id: &str, name: &str, cash: f64) -> Result<(), String> {
+pub fn onboard_holder(
+    state: &mut CompanyState,
+    id: &str,
+    name: &str,
+    cash: f64,
+) -> Result<(), String> {
     if state.holders.contains_key(id) {
         return Err("Holder already exists".into());
     }
@@ -198,10 +202,7 @@ pub fn create_listing(
     price: f64,
     now: DateTime<Utc>,
 ) -> Result<(), String> {
-    let holder = state
-        .holders
-        .get(seller_id)
-        .ok_or("Seller not found")?;
+    let holder = state.holders.get(seller_id).ok_or("Seller not found")?;
     if !holder.positions.contains(&role) {
         return Err("Seller does not hold that role".into());
     }
@@ -216,7 +217,11 @@ pub fn create_listing(
     Ok(())
 }
 
-pub fn buy_listing(state: &mut CompanyState, listing_id: &str, buyer_id: &str) -> Result<(), String> {
+pub fn buy_listing(
+    state: &mut CompanyState,
+    listing_id: &str,
+    buyer_id: &str,
+) -> Result<(), String> {
     let listing = state
         .marketplace
         .iter_mut()
@@ -228,10 +233,7 @@ pub fn buy_listing(state: &mut CompanyState, listing_id: &str, buyer_id: &str) -
     let role = listing.role;
 
     {
-        let buyer = state
-            .holders
-            .get_mut(buyer_id)
-            .ok_or("Buyer not found")?;
+        let buyer = state.holders.get_mut(buyer_id).ok_or("Buyer not found")?;
         if buyer.cash < price {
             return Err("Buyer has insufficient cash".into());
         }
@@ -248,9 +250,11 @@ pub fn buy_listing(state: &mut CompanyState, listing_id: &str, buyer_id: &str) -
         seller.positions.retain(|r| *r != role);
     }
 
-    if let Some(pos) = state.positions.iter_mut().find(|p| {
-        p.tier == role && p.holder_id.as_deref() == Some(&seller_id)
-    }) {
+    if let Some(pos) = state
+        .positions
+        .iter_mut()
+        .find(|p| p.tier == role && p.holder_id.as_deref() == Some(&seller_id))
+    {
         pos.holder_id = Some(buyer_id.to_string());
         pos.acquired_at = Some(Utc::now());
         pos.price_paid = Some(price);
@@ -260,7 +264,14 @@ pub fn buy_listing(state: &mut CompanyState, listing_id: &str, buyer_id: &str) -
     Ok(())
 }
 
-pub fn create_vote(state: &mut CompanyState, id: &str, role: RoleTier, holder: &str, reason: &str, now: DateTime<Utc>) {
+pub fn create_vote(
+    state: &mut CompanyState,
+    id: &str,
+    role: RoleTier,
+    holder: &str,
+    reason: &str,
+    now: DateTime<Utc>,
+) {
     state.votes.insert(
         id.to_string(),
         VoteRecord {
@@ -325,20 +336,50 @@ pub fn auto_trigger_value_drop_vote(
 pub fn allocation_template(name: &str) -> Option<Vec<WorkAllocation>> {
     match name {
         "marketing" => Some(vec![
-            WorkAllocation { holder_id: "lead".into(), weight: 5.0 },
-            WorkAllocation { holder_id: "writer".into(), weight: 3.0 },
-            WorkAllocation { holder_id: "designer".into(), weight: 2.0 },
+            WorkAllocation {
+                holder_id: "lead".into(),
+                weight: 5.0,
+            },
+            WorkAllocation {
+                holder_id: "writer".into(),
+                weight: 3.0,
+            },
+            WorkAllocation {
+                holder_id: "designer".into(),
+                weight: 2.0,
+            },
         ]),
         "engineering" => Some(vec![
-            WorkAllocation { holder_id: "lead".into(), weight: 4.0 },
-            WorkAllocation { holder_id: "backend".into(), weight: 3.0 },
-            WorkAllocation { holder_id: "frontend".into(), weight: 2.0 },
-            WorkAllocation { holder_id: "qa".into(), weight: 1.0 },
+            WorkAllocation {
+                holder_id: "lead".into(),
+                weight: 4.0,
+            },
+            WorkAllocation {
+                holder_id: "backend".into(),
+                weight: 3.0,
+            },
+            WorkAllocation {
+                holder_id: "frontend".into(),
+                weight: 2.0,
+            },
+            WorkAllocation {
+                holder_id: "qa".into(),
+                weight: 1.0,
+            },
         ]),
         "ops" => Some(vec![
-            WorkAllocation { holder_id: "ops_lead".into(), weight: 6.0 },
-            WorkAllocation { holder_id: "finance".into(), weight: 2.0 },
-            WorkAllocation { holder_id: "admin".into(), weight: 2.0 },
+            WorkAllocation {
+                holder_id: "ops_lead".into(),
+                weight: 6.0,
+            },
+            WorkAllocation {
+                holder_id: "finance".into(),
+                weight: 2.0,
+            },
+            WorkAllocation {
+                holder_id: "admin".into(),
+                weight: 2.0,
+            },
         ]),
         _ => None,
     }
@@ -386,7 +427,12 @@ pub fn pm_ready_task(state: &mut CompanyState, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn pm_assign_task(state: &mut CompanyState, id: &str, assignee_id: &str, role: &str) -> Result<(), String> {
+pub fn pm_assign_task(
+    state: &mut CompanyState,
+    id: &str,
+    assignee_id: &str,
+    role: &str,
+) -> Result<(), String> {
     let task = state.tasks.get_mut(id).ok_or("Task not found")?;
     task.assigned.push(TaskAssignment {
         assignee_id: assignee_id.to_string(),
@@ -405,7 +451,12 @@ pub fn pm_submit_for_review(state: &mut CompanyState, id: &str) -> Result<(), St
     Ok(())
 }
 
-pub fn pm_finalize_task(state: &mut CompanyState, id: &str, loc_changed: usize, tests_run: bool) -> Result<(), String> {
+pub fn pm_finalize_task(
+    state: &mut CompanyState,
+    id: &str,
+    loc_changed: usize,
+    tests_run: bool,
+) -> Result<(), String> {
     let task = state.tasks.get_mut(id).ok_or("Task not found")?;
     if loc_changed > task.max_total_loc {
         return Err("Code bloat guardrail: LOC limit exceeded".into());
@@ -428,7 +479,11 @@ pub fn ensure_holder(state: &mut CompanyState, id: &str, name: &str) {
     });
 }
 
-pub fn assign_role_to_holder(state: &mut CompanyState, role: RoleTier, holder_id: &str) -> Result<(), String> {
+pub fn assign_role_to_holder(
+    state: &mut CompanyState,
+    role: RoleTier,
+    holder_id: &str,
+) -> Result<(), String> {
     let holder = state.holders.get_mut(holder_id).ok_or("Holder not found")?;
     if !holder.positions.contains(&role) {
         holder.positions.push(role);
@@ -438,7 +493,11 @@ pub fn assign_role_to_holder(state: &mut CompanyState, role: RoleTier, holder_id
         return Ok(());
     }
 
-    if let Some(pos) = state.positions.iter_mut().find(|p| p.tier == role && p.holder_id.is_none()) {
+    if let Some(pos) = state
+        .positions
+        .iter_mut()
+        .find(|p| p.tier == role && p.holder_id.is_none())
+    {
         pos.holder_id = Some(holder_id.to_string());
         pos.acquired_at = Some(Utc::now());
         pos.price_paid = Some(0.0);
@@ -446,7 +505,10 @@ pub fn assign_role_to_holder(state: &mut CompanyState, role: RoleTier, holder_id
     }
 
     // For fixed/special roles, create a position if missing
-    let special = matches!(role, RoleTier::CEO | RoleTier::President | RoleTier::CoPresident | RoleTier::BoardSeat);
+    let special = matches!(
+        role,
+        RoleTier::CEO | RoleTier::President | RoleTier::CoPresident | RoleTier::BoardSeat
+    );
     if special {
         state.positions.push(RolePosition {
             tier: role,
@@ -484,7 +546,12 @@ pub fn seed_roles(state: &mut CompanyState, ceo_id: &str, ceo_name: &str) -> Res
     Ok(())
 }
 
-pub fn set_tokenomics(state: &mut CompanyState, total_supply_cap: f64, minted_supply: f64, allocations: Vec<TokenAllocation>) {
+pub fn set_tokenomics(
+    state: &mut CompanyState,
+    total_supply_cap: f64,
+    minted_supply: f64,
+    allocations: Vec<TokenAllocation>,
+) {
     state.tokenomics = Some(Tokenomics {
         total_supply_cap,
         minted_supply,
@@ -508,4 +575,23 @@ pub fn grant_tokens(state: &mut CompanyState, holder_id: &str, amount: f64) -> R
     let holder = state.holders.get_mut(holder_id).ok_or("Holder not found")?;
     holder.tokens += amount;
     Ok(())
+}
+
+pub fn auto_onboard(
+    state: &mut CompanyState,
+    id: &str,
+    name: &str,
+    cash: f64,
+) -> Result<bool, String> {
+    onboard_holder(state, id, name, cash)?;
+    state.onboarding_count += 1;
+
+    let mut rewarded = false;
+    if state.onboarding_count <= state.onboarding_policy.early_joiner_limit
+        && state.onboarding_policy.early_joiner_reward > 0.0
+    {
+        grant_tokens(state, id, state.onboarding_policy.early_joiner_reward)?;
+        rewarded = true;
+    }
+    Ok(rewarded)
 }

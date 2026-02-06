@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::State,
     http::HeaderMap,
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,16 +24,34 @@ struct Bot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Task {
     id: String,
+    project_id: String,
     title: String,
     description: String,
     status: String,
     assignee: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Client {
+    id: String,
+    name: String,
+    contact: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Project {
+    id: String,
+    client_id: String,
+    name: String,
+    description: String,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct AppState {
     bots: HashMap<String, Bot>,
     tasks: HashMap<String, Task>,
+    clients: HashMap<String, Client>,
+    projects: HashMap<String, Project>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,13 +66,37 @@ struct RegisterBotResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct CreateTaskRequest {
+struct CreateClientRequest {
+    name: String,
+    contact: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateClientResponse {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateProjectRequest {
+    client_id: String,
+    name: String,
+    description: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateProjectResponse {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct IntakeTaskRequest {
+    project_id: String,
     title: String,
     description: String,
 }
 
 #[derive(Debug, Serialize)]
-struct CreateTaskResponse {
+struct IntakeTaskResponse {
     id: String,
 }
 
@@ -87,7 +129,9 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/bots/register", post(register_bot))
-        .route("/tasks/create", post(create_task))
+        .route("/clients/create", post(create_client))
+        .route("/projects/create", post(create_project))
+        .route("/tasks/intake", post(intake_task))
         .route("/tasks/assign", post(assign_task))
         .route("/deliver", post(deliver))
         .with_state(state.clone());
@@ -148,15 +192,53 @@ async fn register_bot(
     Json(RegisterBotResponse { id })
 }
 
-async fn create_task(
+async fn create_client(
     State(state): State<Arc<Mutex<AppState>>>,
     headers: HeaderMap,
-    Json(req): Json<CreateTaskRequest>,
-) -> Json<CreateTaskResponse> {
+    Json(req): Json<CreateClientRequest>,
+) -> Json<CreateClientResponse> {
+    require_auth(&headers);
+    let id = Uuid::new_v4().to_string();
+    let client = Client {
+        id: id.clone(),
+        name: req.name,
+        contact: req.contact,
+    };
+    let mut guard = state.lock().unwrap();
+    guard.clients.insert(id.clone(), client);
+    save_state("state.json", &guard);
+    Json(CreateClientResponse { id })
+}
+
+async fn create_project(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+    Json(req): Json<CreateProjectRequest>,
+) -> Json<CreateProjectResponse> {
+    require_auth(&headers);
+    let id = Uuid::new_v4().to_string();
+    let project = Project {
+        id: id.clone(),
+        client_id: req.client_id,
+        name: req.name,
+        description: req.description,
+    };
+    let mut guard = state.lock().unwrap();
+    guard.projects.insert(id.clone(), project);
+    save_state("state.json", &guard);
+    Json(CreateProjectResponse { id })
+}
+
+async fn intake_task(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+    Json(req): Json<IntakeTaskRequest>,
+) -> Json<IntakeTaskResponse> {
     require_auth(&headers);
     let id = Uuid::new_v4().to_string();
     let task = Task {
         id: id.clone(),
+        project_id: req.project_id,
         title: req.title,
         description: req.description,
         status: "open".to_string(),
@@ -165,7 +247,7 @@ async fn create_task(
     let mut guard = state.lock().unwrap();
     guard.tasks.insert(id.clone(), task);
     save_state("state.json", &guard);
-    Json(CreateTaskResponse { id })
+    Json(IntakeTaskResponse { id })
 }
 
 async fn assign_task(

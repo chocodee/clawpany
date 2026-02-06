@@ -195,6 +195,18 @@ enum Commands {
         #[arg(long)]
         amount: f64,
     },
+    Onboard {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value_t = 0.0)]
+        cash: f64,
+        #[arg(long, default_value_t = 0)]
+        early_limit: usize,
+        #[arg(long, default_value_t = 0.0)]
+        early_reward: f64,
+    },
 }
 
 fn parse_timestamp(opt: Option<String>) -> DateTime<Utc> {
@@ -208,13 +220,19 @@ fn parse_allocations(raw: &str) -> Vec<WorkAllocation> {
             let mut parts = pair.split(':');
             let id = parts.next()?.to_string();
             let weight = parts.next()?.parse::<f64>().ok()?;
-            Some(WorkAllocation { holder_id: id, weight })
+            Some(WorkAllocation {
+                holder_id: id,
+                weight,
+            })
         })
         .collect()
 }
 
 fn parse_dod(raw: &str) -> Vec<String> {
-    raw.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    raw.split('|')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 fn parse_deliverables(raw: &str) -> Vec<Deliverable> {
@@ -266,6 +284,11 @@ fn default_state() -> CompanyState {
         marketplace: vec![],
         tasks: HashMap::new(),
         tokenomics: None,
+        onboarding_policy: OnboardingPolicy {
+            early_joiner_limit: 0,
+            early_joiner_reward: 0.0,
+        },
+        onboarding_count: 0,
     }
 }
 
@@ -349,7 +372,14 @@ fn main() {
         } => {
             let mut state = load_state(&path).expect("load state");
             let vote_id = format!("vote-{}", Utc::now().timestamp());
-            create_vote(&mut state, &vote_id, target_role, &target_holder, &reason, Utc::now());
+            create_vote(
+                &mut state,
+                &vote_id,
+                target_role,
+                &target_holder,
+                &reason,
+                Utc::now(),
+            );
             cast_vote(
                 &mut state,
                 &vote_id,
@@ -376,7 +406,14 @@ fn main() {
             reason,
         } => {
             let mut state = load_state(&path).expect("load state");
-            create_vote(&mut state, &vote_id, target_role, &target_holder, &reason, Utc::now());
+            create_vote(
+                &mut state,
+                &vote_id,
+                target_role,
+                &target_holder,
+                &reason,
+                Utc::now(),
+            );
             save_state(&path, &state).expect("save state");
             println!("Created vote {}", vote_id);
         }
@@ -452,8 +489,10 @@ fn main() {
         Commands::ListHolders => {
             let state = load_state(&path).expect("load state");
             for holder in state.holders.values() {
-                println!("{} | {} | tokens: {} | cash: {} | roles: {:?}",
-                    holder.id, holder.display_name, holder.tokens, holder.cash, holder.positions);
+                println!(
+                    "{} | {} | tokens: {} | cash: {} | roles: {:?}",
+                    holder.id, holder.display_name, holder.tokens, holder.cash, holder.positions
+                );
             }
         }
         Commands::StateReport => {
@@ -468,15 +507,23 @@ fn main() {
         Commands::ListMarketplace => {
             let state = load_state(&path).expect("load state");
             for l in state.marketplace.iter().filter(|l| l.active) {
-                println!("{} | role: {} | seller: {} | price: {} | active: {}",
-                    l.id, l.role, l.seller_id, l.price, l.active);
+                println!(
+                    "{} | role: {} | seller: {} | price: {} | active: {}",
+                    l.id, l.role, l.seller_id, l.price, l.active
+                );
             }
         }
         Commands::ListVotes => {
             let state = load_state(&path).expect("load state");
             for v in state.votes.values() {
-                println!("{} | role: {} | holder: {} | votes: {} | resolved: {}",
-                    v.id, v.target_role, v.target_holder, v.votes.len(), v.resolved);
+                println!(
+                    "{} | role: {} | holder: {} | votes: {} | resolved: {}",
+                    v.id,
+                    v.target_role,
+                    v.target_holder,
+                    v.votes.len(),
+                    v.resolved
+                );
             }
         }
         Commands::TemplateAllocations { name } => {
@@ -521,7 +568,11 @@ fn main() {
             save_state(&path, &state).expect("save state");
             println!("Task in review {}", id);
         }
-        Commands::PmFinalizeTask { id, loc_changed, tests_run } => {
+        Commands::PmFinalizeTask {
+            id,
+            loc_changed,
+            tests_run,
+        } => {
             let mut state = load_state(&path).expect("load state");
             pm_finalize_task(&mut state, &id, loc_changed, tests_run).expect("finalize task");
             save_state(&path, &state).expect("save state");
@@ -530,8 +581,13 @@ fn main() {
         Commands::ListTasks => {
             let state = load_state(&path).expect("load state");
             for t in state.tasks.values() {
-                println!("{} | {} | status: {:?} | deliverables: {}",
-                    t.id, t.title, t.status, t.deliverables.len());
+                println!(
+                    "{} | {} | status: {:?} | deliverables: {}",
+                    t.id,
+                    t.title,
+                    t.status,
+                    t.deliverables.len()
+                );
             }
         }
         Commands::SeedRoles { holder_id, name } => {
@@ -564,6 +620,24 @@ fn main() {
             grant_tokens(&mut state, &holder_id, amount).expect("grant tokens");
             save_state(&path, &state).expect("save state");
             println!("Granted {} tokens to {}", amount, holder_id);
+        }
+        Commands::Onboard {
+            id,
+            name,
+            cash,
+            early_limit,
+            early_reward,
+        } => {
+            let mut state = load_state(&path).expect("load state");
+            if early_limit > 0 {
+                state.onboarding_policy.early_joiner_limit = early_limit;
+            }
+            if early_reward > 0.0 {
+                state.onboarding_policy.early_joiner_reward = early_reward;
+            }
+            let rewarded = auto_onboard(&mut state, &id, &name, cash).expect("onboard");
+            save_state(&path, &state).expect("save state");
+            println!("Onboarded {} (rewarded: {})", id, rewarded);
         }
     }
 }

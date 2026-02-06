@@ -85,9 +85,9 @@ pub struct EmissionPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernancePolicy {
-    pub vote_threshold: f64,   // 2/3
+    pub vote_threshold: f64,     // 2/3
     pub value_drop_trigger: f64, // 20% drop
-    pub value_window_days: i64, // 30-day average
+    pub value_window_days: i64,  // 30-day average
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +104,8 @@ pub struct CompanyState {
     pub marketplace: Vec<PositionListing>,
     pub tasks: HashMap<String, Task>,
     pub tokenomics: Option<Tokenomics>,
+    pub onboarding_policy: OnboardingPolicy,
+    pub onboarding_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,4 +201,10 @@ pub struct Tokenomics {
     pub total_supply_cap: f64,
     pub minted_supply: f64,
     pub allocations: Vec<TokenAllocation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnboardingPolicy {
+    pub early_joiner_limit: usize,
+    pub early_joiner_reward: f64,
 }
