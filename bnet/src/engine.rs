@@ -509,3 +509,22 @@ pub fn grant_tokens(state: &mut CompanyState, holder_id: &str, amount: f64) -> R
     holder.tokens += amount;
     Ok(())
 }
+
+pub fn auto_onboard(
+    state: &mut CompanyState,
+    id: &str,
+    name: &str,
+    cash: f64,
+) -> Result<bool, String> {
+    onboard_holder(state, id, name, cash)?;
+    state.onboarding_count += 1;
+
+    let mut rewarded = false;
+    if state.onboarding_count <= state.onboarding_policy.early_joiner_limit
+        && state.onboarding_policy.early_joiner_reward > 0.0
+    {
+        grant_tokens(state, id, state.onboarding_policy.early_joiner_reward)?;
+        rewarded = true;
+    }
+    Ok(rewarded)
+}

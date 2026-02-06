@@ -104,6 +104,8 @@ pub struct CompanyState {
     pub marketplace: Vec<PositionListing>,
     pub tasks: HashMap<String, Task>,
     pub tokenomics: Option<Tokenomics>,
+    pub onboarding_policy: OnboardingPolicy,
+    pub onboarding_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,4 +201,10 @@ pub struct Tokenomics {
     pub total_supply_cap: f64,
     pub minted_supply: f64,
     pub allocations: Vec<TokenAllocation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnboardingPolicy {
+    pub early_joiner_limit: usize,
+    pub early_joiner_reward: f64,
 }
