@@ -103,6 +103,7 @@ pub struct CompanyState {
     pub votes: HashMap<String, VoteRecord>,
     pub marketplace: Vec<PositionListing>,
     pub tasks: HashMap<String, Task>,
+    pub tokenomics: Option<Tokenomics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,4 +186,17 @@ pub struct Task {
     pub max_total_loc: usize,
     pub require_summary: bool,
     pub require_tests: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenAllocation {
+    pub name: String,
+    pub percent: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tokenomics {
+    pub total_supply_cap: f64,
+    pub minted_supply: f64,
+    pub allocations: Vec<TokenAllocation>,
 }

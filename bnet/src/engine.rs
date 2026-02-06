@@ -483,3 +483,29 @@ pub fn seed_roles(state: &mut CompanyState, ceo_id: &str, ceo_name: &str) -> Res
     }
     Ok(())
 }
+
+pub fn set_tokenomics(state: &mut CompanyState, total_supply_cap: f64, minted_supply: f64, allocations: Vec<TokenAllocation>) {
+    state.tokenomics = Some(Tokenomics {
+        total_supply_cap,
+        minted_supply,
+        allocations,
+    });
+}
+
+pub fn tokenomics_report(state: &CompanyState) -> Option<serde_json::Value> {
+    let t = state.tokenomics.as_ref()?;
+    let allocated_total: f64 = t.allocations.iter().map(|a| a.percent).sum();
+    Some(serde_json::json!({
+        "total_supply_cap": t.total_supply_cap,
+        "minted_supply": t.minted_supply,
+        "remaining_supply": (t.total_supply_cap - t.minted_supply).max(0.0),
+        "allocations": t.allocations,
+        "allocations_total_percent": allocated_total
+    }))
+}
+
+pub fn grant_tokens(state: &mut CompanyState, holder_id: &str, amount: f64) -> Result<(), String> {
+    let holder = state.holders.get_mut(holder_id).ok_or("Holder not found")?;
+    holder.tokens += amount;
+    Ok(())
+}
