@@ -189,6 +189,10 @@ enum Commands {
         allocations: String,
     },
     TokenomicsReport,
+    PayoutReport {
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
     GrantTokens {
         #[arg(long)]
         holder_id: String,
@@ -613,6 +617,43 @@ fn main() {
                 println!("{}", serde_json::to_string_pretty(&report).unwrap());
             } else {
                 println!("No tokenomics configured");
+            }
+        }
+        Commands::PayoutReport { format } => {
+            let state = load_state(&path).expect("load state");
+            let mut holders: Vec<_> = state.holders.values().collect();
+            holders.sort_by(|a, b| a.id.cmp(&b.id));
+            if format == "csv" {
+                println!("id,name,tokens,cash,roles");
+                for h in holders {
+                    let roles = h
+                        .positions
+                        .iter()
+                        .map(|r| r.to_string())
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    println!(
+                        "{},{},{},{},{}",
+                        h.id, h.display_name, h.tokens, h.cash, roles
+                    );
+                }
+            } else {
+                let payload = serde_json::json!({
+                    "holders": holders
+                        .iter()
+                        .map(|h| {
+                            serde_json::json!({
+                                "id": h.id,
+                                "name": h.display_name,
+                                "tokens": h.tokens,
+                                "cash": h.cash,
+                                "roles": h.positions,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                    "tokenomics": tokenomics_report(&state),
+                });
+                println!("{}", serde_json::to_string_pretty(&payload).unwrap());
             }
         }
         Commands::GrantTokens { holder_id, amount } => {
