@@ -195,6 +195,18 @@ enum Commands {
         #[arg(long)]
         amount: f64,
     },
+    Onboard {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value_t = 0.0)]
+        cash: f64,
+        #[arg(long, default_value_t = 0)]
+        early_limit: usize,
+        #[arg(long, default_value_t = 0.0)]
+        early_reward: f64,
+    },
 }
 
 fn parse_timestamp(opt: Option<String>) -> DateTime<Utc> {
@@ -266,6 +278,11 @@ fn default_state() -> CompanyState {
         marketplace: vec![],
         tasks: HashMap::new(),
         tokenomics: None,
+        onboarding_policy: OnboardingPolicy {
+            early_joiner_limit: 0,
+            early_joiner_reward: 0.0,
+        },
+        onboarding_count: 0,
     }
 }
 
@@ -564,6 +581,24 @@ fn main() {
             grant_tokens(&mut state, &holder_id, amount).expect("grant tokens");
             save_state(&path, &state).expect("save state");
             println!("Granted {} tokens to {}", amount, holder_id);
+        }
+        Commands::Onboard {
+            id,
+            name,
+            cash,
+            early_limit,
+            early_reward,
+        } => {
+            let mut state = load_state(&path).expect("load state");
+            if early_limit > 0 {
+                state.onboarding_policy.early_joiner_limit = early_limit;
+            }
+            if early_reward > 0.0 {
+                state.onboarding_policy.early_joiner_reward = early_reward;
+            }
+            let rewarded = auto_onboard(&mut state, &id, &name, cash).expect("onboard");
+            save_state(&path, &state).expect("save state");
+            println!("Onboarded {} (rewarded: {})", id, rewarded);
         }
     }
 }
