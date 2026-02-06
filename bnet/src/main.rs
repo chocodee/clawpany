@@ -180,6 +180,10 @@ enum Commands {
         #[arg(long, default_value = "CEO")]
         name: String,
     },
+    SeedDemo {
+        #[arg(long, default_value = "demo")]
+        company: String,
+    },
     TokenomicsSet {
         #[arg(long)]
         total_supply_cap: f64,
@@ -595,6 +599,71 @@ fn main() {
             seed_roles(&mut state, &holder_id, &name).expect("seed roles");
             save_state(&path, &state).expect("save state");
             println!("Seeded roles with {} as CEO + Board seat", holder_id);
+        }
+        Commands::SeedDemo { company } => {
+            let mut state = default_state();
+            state.employee_count = 3;
+            ensure_positions(&mut state);
+
+            onboard_holder(&mut state, "ceo", &format!("{} CEO", company), 1000.0)
+                .expect("add ceo");
+            onboard_holder(&mut state, "lead", "Engineering Lead", 500.0).expect("add lead");
+            onboard_holder(&mut state, "ops", "Ops Lead", 500.0).expect("add ops");
+
+            seed_roles(&mut state, "ceo", &format!("{} CEO", company)).expect("seed roles");
+
+            set_tokenomics(
+                &mut state,
+                1_000_000.0,
+                100_000.0,
+                vec![
+                    TokenAllocation {
+                        name: "engineering".into(),
+                        percent: 40.0,
+                    },
+                    TokenAllocation {
+                        name: "marketing".into(),
+                        percent: 30.0,
+                    },
+                    TokenAllocation {
+                        name: "ops".into(),
+                        percent: 30.0,
+                    },
+                ],
+            );
+
+            pm_create_task(
+                &mut state,
+                "task-001",
+                "Ship landing page",
+                "Build a simple landing page for demo",
+                vec!["Landing page deployed".into(), "CTA wired".into()],
+                vec![Deliverable {
+                    description: "Landing page".into(),
+                    max_loc: 200,
+                    tests_required: false,
+                }],
+                200,
+            );
+            pm_ready_task(&mut state, "task-001").expect("ready task");
+
+            pm_create_task(
+                &mut state,
+                "task-002",
+                "Set up onboarding flow",
+                "Define onboarding steps + docs",
+                vec!["Docs created".into(), "Workflow tested".into()],
+                vec![Deliverable {
+                    description: "Onboarding doc".into(),
+                    max_loc: 150,
+                    tests_required: false,
+                }],
+                150,
+            );
+            pm_ready_task(&mut state, "task-002").expect("ready task");
+
+            save_state(&path, &state).expect("save state");
+            println!("Seeded demo company: {}", company);
         }
         Commands::TokenomicsSet {
             total_supply_cap,
