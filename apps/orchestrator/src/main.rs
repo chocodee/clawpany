@@ -133,6 +133,9 @@ async fn main() {
         .route("/projects/create", post(create_project))
         .route("/tasks/intake", post(intake_task))
         .route("/tasks/assign", post(assign_task))
+        .route("/tasks", get(list_tasks))
+        .route("/clients", get(list_clients))
+        .route("/projects", get(list_projects))
         .route("/deliver", post(deliver))
         .with_state(state.clone());
 
@@ -190,6 +193,39 @@ async fn register_bot(
     guard.bots.insert(id.clone(), bot);
     save_state("state.json", &guard);
     Json(RegisterBotResponse { id })
+}
+
+async fn list_clients(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+) -> Json<Vec<Client>> {
+    require_auth(&headers);
+    let guard = state.lock().unwrap();
+    let mut clients: Vec<Client> = guard.clients.values().cloned().collect();
+    clients.sort_by(|a, b| a.name.cmp(&b.name));
+    Json(clients)
+}
+
+async fn list_projects(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+) -> Json<Vec<Project>> {
+    require_auth(&headers);
+    let guard = state.lock().unwrap();
+    let mut projects: Vec<Project> = guard.projects.values().cloned().collect();
+    projects.sort_by(|a, b| a.name.cmp(&b.name));
+    Json(projects)
+}
+
+async fn list_tasks(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+) -> Json<Vec<Task>> {
+    require_auth(&headers);
+    let guard = state.lock().unwrap();
+    let mut tasks: Vec<Task> = guard.tasks.values().cloned().collect();
+    tasks.sort_by(|a, b| a.title.cmp(&b.title));
+    Json(tasks)
 }
 
 async fn create_client(
