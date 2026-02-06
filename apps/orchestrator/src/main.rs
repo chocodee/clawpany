@@ -29,7 +29,16 @@ struct Task {
     description: String,
     status: String,
     assignee: Option<String>,
+    #[serde(default)]
+    delivery_summary: Option<String>,
 }
+
+const STATUS_OPEN: &str = "open";
+const STATUS_ASSIGNED: &str = "assigned";
+const STATUS_IN_PROGRESS: &str = "in_progress";
+const STATUS_BLOCKED: &str = "blocked";
+const STATUS_REVIEW: &str = "review";
+const STATUS_DELIVERED: &str = "delivered";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Client {
@@ -112,6 +121,17 @@ struct AssignTaskResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct UpdateStatusRequest {
+    task_id: String,
+    status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateStatusResponse {
+    ok: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct DeliverRequest {
     task_id: String,
     summary: String,
@@ -133,6 +153,7 @@ async fn main() {
         .route("/projects/create", post(create_project))
         .route("/tasks/intake", post(intake_task))
         .route("/tasks/assign", post(assign_task))
+        .route("/tasks/status", post(update_status))
         .route("/deliver", post(deliver))
         .with_state(state.clone());
 
@@ -171,6 +192,40 @@ fn load_state<P: AsRef<Path>>(path: P) -> AppState {
 fn save_state<P: AsRef<Path>>(path: P, state: &AppState) {
     if let Ok(data) = serde_json::to_string_pretty(state) {
         let _ = fs::write(path, data);
+    }
+}
+
+fn normalize_status(status: &str) -> &str {
+    if status.starts_with("delivered:") {
+        STATUS_DELIVERED
+    } else {
+        status
+    }
+}
+
+fn is_valid_status(status: &str) -> bool {
+    matches!(
+        normalize_status(status),
+        STATUS_OPEN
+            | STATUS_ASSIGNED
+            | STATUS_IN_PROGRESS
+            | STATUS_BLOCKED
+            | STATUS_REVIEW
+            | STATUS_DELIVERED
+    )
+}
+
+fn can_transition(from: &str, to: &str) -> bool {
+    let from = normalize_status(from);
+    let to = normalize_status(to);
+    match from {
+        STATUS_OPEN => matches!(to, STATUS_ASSIGNED),
+        STATUS_ASSIGNED => matches!(to, STATUS_IN_PROGRESS | STATUS_BLOCKED | STATUS_DELIVERED),
+        STATUS_IN_PROGRESS => matches!(to, STATUS_BLOCKED | STATUS_REVIEW | STATUS_DELIVERED),
+        STATUS_BLOCKED => matches!(to, STATUS_IN_PROGRESS | STATUS_REVIEW),
+        STATUS_REVIEW => matches!(to, STATUS_IN_PROGRESS | STATUS_DELIVERED),
+        STATUS_DELIVERED => false,
+        _ => false,
     }
 }
 
@@ -241,8 +296,9 @@ async fn intake_task(
         project_id: req.project_id,
         title: req.title,
         description: req.description,
-        status: "open".to_string(),
+        status: STATUS_OPEN.to_string(),
         assignee: None,
+        delivery_summary: None,
     };
     let mut guard = state.lock().unwrap();
     guard.tasks.insert(id.clone(), task);
@@ -258,12 +314,36 @@ async fn assign_task(
     require_auth(&headers);
     let mut guard = state.lock().unwrap();
     if let Some(task) = guard.tasks.get_mut(&req.task_id) {
+        if !can_transition(&task.status, STATUS_ASSIGNED) {
+            return Json(AssignTaskResponse { ok: false });
+        }
         task.assignee = Some(req.bot_id);
-        task.status = "assigned".to_string();
+        task.status = STATUS_ASSIGNED.to_string();
         save_state("state.json", &guard);
         return Json(AssignTaskResponse { ok: true });
     }
     Json(AssignTaskResponse { ok: false })
+}
+
+async fn update_status(
+    State(state): State<Arc<Mutex<AppState>>>,
+    headers: HeaderMap,
+    Json(req): Json<UpdateStatusRequest>,
+) -> Json<UpdateStatusResponse> {
+    require_auth(&headers);
+    if !is_valid_status(&req.status) {
+        return Json(UpdateStatusResponse { ok: false });
+    }
+    let mut guard = state.lock().unwrap();
+    if let Some(task) = guard.tasks.get_mut(&req.task_id) {
+        if !can_transition(&task.status, &req.status) {
+            return Json(UpdateStatusResponse { ok: false });
+        }
+        task.status = req.status;
+        save_state("state.json", &guard);
+        return Json(UpdateStatusResponse { ok: true });
+    }
+    Json(UpdateStatusResponse { ok: false })
 }
 
 async fn deliver(
@@ -274,9 +354,41 @@ async fn deliver(
     require_auth(&headers);
     let mut guard = state.lock().unwrap();
     if let Some(task) = guard.tasks.get_mut(&req.task_id) {
-        task.status = format!("delivered: {}", req.summary);
+        if !can_transition(&task.status, STATUS_DELIVERED) {
+            return Json(DeliverResponse { ok: false });
+        }
+        task.status = STATUS_DELIVERED.to_string();
+        task.delivery_summary = Some(req.summary);
         save_state("state.json", &guard);
         return Json(DeliverResponse { ok: true });
     }
     Json(DeliverResponse { ok: false })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_statuses() {
+        assert!(is_valid_status(STATUS_OPEN));
+        assert!(is_valid_status(STATUS_ASSIGNED));
+        assert!(is_valid_status(STATUS_IN_PROGRESS));
+        assert!(is_valid_status(STATUS_BLOCKED));
+        assert!(is_valid_status(STATUS_REVIEW));
+        assert!(is_valid_status(STATUS_DELIVERED));
+        assert!(is_valid_status("delivered: legacy"));
+        assert!(!is_valid_status("unknown"));
+    }
+
+    #[test]
+    fn transition_rules() {
+        assert!(can_transition(STATUS_OPEN, STATUS_ASSIGNED));
+        assert!(!can_transition(STATUS_OPEN, STATUS_DELIVERED));
+        assert!(can_transition(STATUS_ASSIGNED, STATUS_IN_PROGRESS));
+        assert!(can_transition(STATUS_ASSIGNED, STATUS_DELIVERED));
+        assert!(can_transition(STATUS_IN_PROGRESS, STATUS_REVIEW));
+        assert!(can_transition(STATUS_REVIEW, STATUS_DELIVERED));
+        assert!(!can_transition(STATUS_DELIVERED, STATUS_REVIEW));
+    }
 }
