@@ -85,9 +85,9 @@ pub struct EmissionPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernancePolicy {
-    pub vote_threshold: f64,   // 2/3
+    pub vote_threshold: f64,     // 2/3
     pub value_drop_trigger: f64, // 20% drop
-    pub value_window_days: i64, // 30-day average
+    pub value_window_days: i64,  // 30-day average
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
