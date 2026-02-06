@@ -160,10 +160,10 @@ fn require_auth(headers: &HeaderMap) {
 }
 
 fn load_state<P: AsRef<Path>>(path: P) -> AppState {
-    if let Ok(data) = fs::read_to_string(&path) {
-        if let Ok(state) = serde_json::from_str(&data) {
-            return state;
-        }
+    if let Ok(data) = fs::read_to_string(&path)
+        && let Ok(state) = serde_json::from_str(&data)
+    {
+        return state;
     }
     AppState::default()
 }
