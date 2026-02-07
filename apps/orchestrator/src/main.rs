@@ -29,6 +29,7 @@ struct Task {
     description: String,
     status: String,
     assignee: Option<String>,
+    runtime: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +94,7 @@ struct IntakeTaskRequest {
     project_id: String,
     title: String,
     description: String,
+    runtime: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -243,6 +245,7 @@ async fn intake_task(
         description: req.description,
         status: "open".to_string(),
         assignee: None,
+        runtime: req.runtime.clone(),
     };
     let mut guard = state.lock().unwrap();
     guard.tasks.insert(id.clone(), task);
